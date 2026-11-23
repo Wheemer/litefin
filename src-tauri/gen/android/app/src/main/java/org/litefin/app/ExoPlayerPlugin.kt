@@ -483,6 +483,12 @@ class ExoPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         }
       }
 
+      override fun onEvents(player: Player, events: Player.Events) {
+        if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_VIDEO_SIZE_CHANGED, Player.EVENT_TRACKS_CHANGED)) {
+          MainActivity.instance?.updateAutomaticPictureInPicture()
+        }
+      }
+
       override fun onVideoSizeChanged(videoSize: VideoSize) {
         val pixelRatio = if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1f
         val aspect = if (videoSize.height > 0) (videoSize.width * pixelRatio) / videoSize.height else 0f
@@ -978,6 +984,7 @@ class ExoPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         releaseMediaSession()
         player?.release()
         player = null
+        MainActivity.instance?.updateAutomaticPictureInPicture()
         trackSelector = null
         pendingAudioTrackIndex = null
         MainActivity.instance?.setKeepScreenOn(false)

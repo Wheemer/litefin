@@ -92,6 +92,7 @@ class MainActivity : TauriActivity() {
 
   private var pictureInPictureSession = false
   private var webViewAlphaBeforePictureInPicture: Float? = null
+  private var automaticPictureInPictureArmed = false
 
   // Reference to the native launcher helper managing Android TV channels and shortcuts
   private val launcherHelper by lazy { AndroidLauncherHelper(this) }
@@ -471,14 +472,12 @@ class MainActivity : TauriActivity() {
     }
   }
 
-  override fun onUserLeaveHint() {
-    super.onUserLeaveHint()
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isTvDevice() ||
-      !packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) ||
-      isInPictureInPictureMode
-    ) return
+  private fun supportsAutomaticPictureInPicture(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+      packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) &&
+      !isTvDevice()
 
-    val videoAspect = ExoPlayerPlugin.instance?.getPlayingVideoAspectRatio() ?: return
+  private fun pictureInPictureParams(videoAspect: Float): PictureInPictureParams.Builder {
     val aspect = (videoAspect * 1000).toInt().coerceIn(419, 2390)
     val bounds = Rect()
     val params = PictureInPictureParams.Builder()
@@ -486,15 +485,43 @@ class MainActivity : TauriActivity() {
     if (surfaceView?.getGlobalVisibleRect(bounds) == true) {
       params.setSourceRectHint(bounds)
     }
+    return params
+  }
+
+  internal fun updateAutomaticPictureInPicture() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || !supportsAutomaticPictureInPicture()) return
+    val aspect = ExoPlayerPlugin.instance?.getPlayingVideoAspectRatio()
+    val autoEnter = aspect != null
+    if (!autoEnter && !automaticPictureInPictureArmed) return
+    val params = if (aspect != null) pictureInPictureParams(aspect) else PictureInPictureParams.Builder()
+    setPictureInPictureParams(params.setAutoEnterEnabled(autoEnter).build())
+    automaticPictureInPictureArmed = autoEnter
+  }
+
+  override fun onUserLeaveHint() {
+    super.onUserLeaveHint()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ||
+      !supportsAutomaticPictureInPicture() || isInPictureInPictureMode
+    ) return
+
+    val videoAspect = ExoPlayerPlugin.instance?.getPlayingVideoAspectRatio() ?: return
 
     // WebView visibility may change before Android delivers the PiP callback.
     keepingPlaybackInPictureInPicture = true
     try {
-      pictureInPictureSession = enterPictureInPictureMode(params.build())
+      pictureInPictureSession = enterPictureInPictureMode(pictureInPictureParams(videoAspect).build())
     } catch (e: IllegalStateException) {
       Log.w("MainActivity", "Could not enter picture-in-picture", e)
     }
     if (!pictureInPictureSession) keepingPlaybackInPictureInPicture = false
+  }
+
+  override fun onPause() {
+    // PiP can pause the activity before Android reports that the window is pinned.
+    if (automaticPictureInPictureArmed) {
+      keepingPlaybackInPictureInPicture = true
+    }
+    super.onPause()
   }
 
   override fun onPictureInPictureModeChanged(
@@ -522,7 +549,7 @@ class MainActivity : TauriActivity() {
 
   override fun onStop() {
     super.onStop()
-    if (pictureInPictureSession) {
+    if (pictureInPictureSession || keepingPlaybackInPictureInPicture) {
       // PiP stays visible in onPause. onStop means its window is no longer visible.
       ExoPlayerPlugin.instance?.pauseAfterPictureInPicture()
       pictureInPictureSession = false
@@ -538,6 +565,7 @@ class MainActivity : TauriActivity() {
     }
     // Re-assert focus onto active WebView when resuming from background
     activeWebView?.requestFocus()
+    updateAutomaticPictureInPicture()
     // Synchronize fullscreen state to current configuration
     setFullscreen(isFullscreen)
   }
