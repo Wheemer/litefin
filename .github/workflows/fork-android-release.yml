@@ -193,5 +193,5 @@ jobs:
               "$COMMIT:refs/heads/development" "$COMMIT:$ref"
           fi
           gh release create "$TAG" "$GITHUB_WORKSPACE/Litefin-Android-universal.apk" --repo "$GITHUB_REPOSITORY" \
-            --verify-tag --title "Litefin $TAG (Wheemer Android)" --latest \
+            --verify-tag --title "Litefin $TAG" --latest \
             --notes "Fork build of upstream Litefin $TAG with a single universal Android APK."
