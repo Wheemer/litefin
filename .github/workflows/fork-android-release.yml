@@ -9,6 +9,10 @@ on:
         description: Publish the release (off builds and verifies only)
         type: boolean
         default: false
+      retarget_existing_tag:
+        description: Allow retargeting an unpublished tag on this fork
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -157,14 +161,36 @@ jobs:
         if: github.event_name == 'schedule' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
+          RETARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.retarget_existing_tag }}
         run: |
+          set -euo pipefail
           git clone -b fork-release-candidate "$RUNNER_TEMP/candidate.bundle" "$RUNNER_TEMP/source"
-          git -C "$RUNNER_TEMP/source" merge-base --is-ancestor "$BASE" "$COMMIT"
+          cd "$RUNNER_TEMP/source"
+          test "$(git rev-parse HEAD)" = "$COMMIT"
+          git merge-base --is-ancestor "$BASE" "$COMMIT"
           gh auth setup-git
           remote="https://github.com/$GITHUB_REPOSITORY.git"
+          ref="refs/tags/$TAG"
           current=$(git ls-remote "$remote" refs/heads/development | cut -f1)
           test "$current" = "$BASE"
-          git -C "$RUNNER_TEMP/source" push "$remote" "$COMMIT:refs/heads/development"
-          gh release create "$TAG" Litefin-Android-universal.apk --repo "$GITHUB_REPOSITORY" \
-            --target "$COMMIT" --title "Litefin $TAG (Wheemer Android)" --latest \
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
+          if grep -Fxq "$TAG" <<< "$existing"; then
+            echo "::error::A release already exists for $TAG"
+            exit 1
+          fi
+          tag_refs=$(git ls-remote "$remote" "$ref" "$ref^{}")
+          old=$(awk -v ref="$ref" '$2 == ref {print $1}' <<< "$tag_refs")
+          peeled=$(awk -v ref="$ref^{}" '$2 == ref {print $1}' <<< "$tag_refs")
+          if [[ "${peeled:-$old}" == "$COMMIT" ]]; then
+            git push "$remote" "$COMMIT:refs/heads/development"
+          else
+            if [[ -n "$old" && "$RETARGET_TAG" != true ]]; then
+              echo "::error::Tag $TAG already points to a different commit"
+              exit 1
+            fi
+            git push --atomic --force-with-lease="$ref:$old" "$remote" \
+              "$COMMIT:refs/heads/development" "$COMMIT:$ref"
+          fi
+          gh release create "$TAG" "$GITHUB_WORKSPACE/Litefin-Android-universal.apk" --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --title "Litefin $TAG (Wheemer Android)" --latest \
             --notes "Fork build of upstream Litefin $TAG with a single universal Android APK."
