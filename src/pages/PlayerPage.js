@@ -5461,6 +5461,8 @@ class PlayerPage extends Page {
      * resume on return.
      */
     _handleAppHidden() {
+        if (platformInfo.isAndroid && window.LitefinExoPlayer?.isKeepingPlaybackInPictureInPicture?.()) return;
+
         // Exit early if page teardown is already underway or background setup has completed
         if (this._isExiting || this._backgroundPrepared) return;
 

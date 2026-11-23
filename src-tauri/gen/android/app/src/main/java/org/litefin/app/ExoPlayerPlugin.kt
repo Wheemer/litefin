@@ -663,6 +663,18 @@ class ExoPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     return player?.isPlaying ?: false
   }
 
+  internal fun getPlayingVideoAspectRatio(): Float? {
+    val active = player ?: return null
+    if (!active.isPlaying || !active.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)) return null
+    val size = active.videoSize
+    if (size.width <= 0 || size.height <= 0) return null
+    return (size.width * size.pixelWidthHeightRatio / size.height).takeIf { it.isFinite() && it > 0f }
+  }
+
+  internal fun pauseAfterPictureInPicture() {
+    player?.pause()
+  }
+
   // ===========================================================================
   // Tauri @Command Endpoints (Asynchronous Invocation)
   // ===========================================================================
@@ -1145,6 +1157,11 @@ class ExoPlayerPlugin(private val activity: Activity) : Plugin(activity) {
    * Provides synchronous property queries and zero-overhead calls from JavaScript.
    */
   inner class DirectPlayerBridge {
+
+    @JavascriptInterface
+    fun isKeepingPlaybackInPictureInPicture(): Boolean {
+      return MainActivity.instance?.keepingPlaybackInPictureInPicture == true
+    }
 
     @JavascriptInterface
     fun prepare(url: String, headersJson: String?, startPositionMs: Long) {

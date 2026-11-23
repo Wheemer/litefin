@@ -1,6 +1,8 @@
 package org.litefin.app
 
+import android.app.PictureInPictureParams
 import android.content.Context
+import android.graphics.Rect
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -10,6 +12,7 @@ import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.util.Rational
 import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
@@ -82,6 +85,13 @@ class MainActivity : TauriActivity() {
 
   // Reference to the active WebView instance (internal so AndroidLauncherHelper can evaluate JavaScript)
   internal var activeWebView: WebView? = null
+
+  @Volatile
+  internal var keepingPlaybackInPictureInPicture = false
+    private set
+
+  private var pictureInPictureSession = false
+  private var webViewAlphaBeforePictureInPicture: Float? = null
 
   // Reference to the native launcher helper managing Android TV channels and shortcuts
   private val launcherHelper by lazy { AndroidLauncherHelper(this) }
@@ -460,8 +470,71 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  override fun onUserLeaveHint() {
+    super.onUserLeaveHint()
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isTvDevice() ||
+      !packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) ||
+      isInPictureInPictureMode
+    ) return
+
+    val videoAspect = ExoPlayerPlugin.instance?.getPlayingVideoAspectRatio() ?: return
+    val aspect = (videoAspect * 1000).toInt().coerceIn(419, 2390)
+    val bounds = Rect()
+    val params = PictureInPictureParams.Builder()
+      .setAspectRatio(Rational(aspect, 1000))
+    if (surfaceView?.getGlobalVisibleRect(bounds) == true) {
+      params.setSourceRectHint(bounds)
+    }
+
+    // WebView visibility may change before Android delivers the PiP callback.
+    keepingPlaybackInPictureInPicture = true
+    try {
+      pictureInPictureSession = enterPictureInPictureMode(params.build())
+    } catch (e: IllegalStateException) {
+      Log.w("MainActivity", "Could not enter picture-in-picture", e)
+    }
+    if (!pictureInPictureSession) keepingPlaybackInPictureInPicture = false
+  }
+
+  override fun onPictureInPictureModeChanged(
+    isInPictureInPictureMode: Boolean,
+    newConfig: android.content.res.Configuration
+  ) {
+    super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+    if (isInPictureInPictureMode) {
+      pictureInPictureSession = true
+      keepingPlaybackInPictureInPicture = true
+      activeWebView?.let {
+        webViewAlphaBeforePictureInPicture = it.alpha
+        it.alpha = 0f
+      }
+    } else {
+      restorePictureInPictureOverlay()
+    }
+  }
+
+  private fun restorePictureInPictureOverlay() {
+    webViewAlphaBeforePictureInPicture?.let { activeWebView?.alpha = it }
+    webViewAlphaBeforePictureInPicture = null
+    keepingPlaybackInPictureInPicture = false
+  }
+
+  override fun onStop() {
+    super.onStop()
+    if (pictureInPictureSession) {
+      // PiP stays visible in onPause. onStop means its window is no longer visible.
+      ExoPlayerPlugin.instance?.pauseAfterPictureInPicture()
+      pictureInPictureSession = false
+      restorePictureInPictureOverlay()
+    }
+  }
+
   override fun onResume() {
     super.onResume()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInPictureInPictureMode) {
+      pictureInPictureSession = false
+      restorePictureInPictureOverlay()
+    }
     // Re-assert focus onto active WebView when resuming from background
     activeWebView?.requestFocus()
     // Synchronize fullscreen state to current configuration

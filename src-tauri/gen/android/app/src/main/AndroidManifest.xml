@@ -40,6 +40,7 @@
             android:launchMode="singleTask"
             android:label="@string/main_activity_title"
             android:name=".MainActivity"
+            android:supportsPictureInPicture="true"
             android:banner="@drawable/banner"
             android:hardwareAccelerated="true"
             android:exported="true">
