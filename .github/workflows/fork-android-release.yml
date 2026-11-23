@@ -13,6 +13,10 @@ on:
         description: Allow retargeting an unpublished tag on this fork
         type: boolean
         default: false
+      replace_release:
+        description: Replace the current fork APK after the new APK passes verification
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -40,13 +44,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
+          REPLACE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.replace_release }}
         run: |
           set -euo pipefail
           tag=$(gh api repos/MoazSalem/litefin/releases/latest --jq .tag_name)
           [[ "$tag" =~ ^v[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}$ ]]
           if [[ "$EVENT" == schedule && "$tag" == v2.10.0 ]]; then exit 0; fi
           existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
-          if grep -Fxq "$tag" <<< "$existing"; then exit 0; fi
+          if grep -Fxq "$tag" <<< "$existing" && [[ "$REPLACE_RELEASE" != true ]]; then exit 0; fi
           base=$(git rev-parse HEAD)
           git fetch --no-tags https://github.com/MoazSalem/litefin.git "refs/tags/$tag"
           git config user.name 'github-actions[bot]'
@@ -163,6 +168,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RETARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.retarget_existing_tag }}
+          REPLACE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.replace_release }}
         run: |
           set -euo pipefail
           git clone -b fork-release-candidate "$RUNNER_TEMP/candidate.bundle" "$RUNNER_TEMP/source"
@@ -175,9 +181,13 @@ jobs:
           current=$(git ls-remote "$remote" refs/heads/development | cut -f1)
           test "$current" = "$BASE"
           existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
+          replace=false
           if grep -Fxq "$TAG" <<< "$existing"; then
-            echo "::error::A release already exists for $TAG"
-            exit 1
+            if [[ "$REPLACE_RELEASE" != true ]]; then
+              echo "::error::A release already exists for $TAG"
+              exit 1
+            fi
+            replace=true
           fi
           tag_refs=$(git ls-remote "$remote" "$ref" "$ref^{}")
           old=$(awk -v ref="$ref" '$2 == ref {print $1}' <<< "$tag_refs")
@@ -185,12 +195,17 @@ jobs:
           if [[ "${peeled:-$old}" == "$COMMIT" ]]; then
             git push "$remote" "$COMMIT:refs/heads/development"
           else
-            if [[ -n "$old" && "$RETARGET_TAG" != true ]]; then
+            if [[ -n "$old" && "$RETARGET_TAG" != true && "$replace" != true ]]; then
               echo "::error::Tag $TAG already points to a different commit"
               exit 1
             fi
             git push --atomic --force-with-lease="$ref:$old" "$remote" \
               "$COMMIT:refs/heads/development" "$COMMIT:$ref"
+          fi
+          if [[ "$replace" == true ]]; then
+            gh release upload "$TAG" "$GITHUB_WORKSPACE/Litefin-Android-universal.apk" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            exit 0
           fi
           gh release create "$TAG" "$GITHUB_WORKSPACE/Litefin-Android-universal.apk" --repo "$GITHUB_REPOSITORY" \
             --verify-tag --title "Litefin $TAG" --latest \
