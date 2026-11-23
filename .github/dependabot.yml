@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: {interval: weekly}
+    groups:
+      npm-compatible:
+        update-types: [minor, patch]
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule: {interval: weekly}
+    groups:
+      rust-compatible:
+        update-types: [minor, patch]
+  - package-ecosystem: gradle
+    directory: /src-tauri/gen/android
+    schedule: {interval: weekly}
+    groups:
+      android-media:
+        patterns: ["androidx.media3:*", "org.jellyfin.media3:*"]
+      android-toolchain:
+        patterns: ["com.android.tools.build:gradle", "org.jetbrains.kotlin:*"]
+  - package-ecosystem: nuget
+    directory: /server-plugin
+    schedule: {interval: weekly}
+    ignore:
+      - dependency-name: "Jellyfin.*"
+    # The Jellyfin references are provided by the host and define its API baseline.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+    groups:
+      github-actions:
+        patterns: ["*"]
