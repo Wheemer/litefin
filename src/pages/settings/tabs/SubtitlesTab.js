@@ -189,6 +189,7 @@ export class SubtitlesTab {
                 ], PlayerSettings.get('subtitleBurnIn') || ''))}
                 ${this._item('LabelRememberTracksForSession', 'Remember Tracks for Session', 'RememberTracksForSessionDescription', 'Automatically carry active audio and subtitle tracks.', this._toggle('subtitle-remember-tracks-toggle', PlayerSettings.get('rememberTracksForSession') !== false, 'rememberTracksForSession'))}
                 ${this._item('PreferExternalSubtitles', 'Prefer External Subtitles', 'PreferExternalSubtitlesDescription', 'Prefer external subtitle tracks over embedded ones.', this._toggle('subtitle-prefer-external-toggle', PlayerSettings.get('preferExternalSubtitles'), 'preferExternalSubtitles'))}
+                ${this._item('PreferFullCaptions', 'Prefer Full Captions', 'PreferFullCaptionsDescription', 'In Always mode, choose a full track over a forced-only track in the preferred subtitle language. Applies only on this device.', this._toggle('subtitle-prefer-full-toggle', PlayerSettings.get('preferFullCaptions'), 'preferFullCaptions'))}
                 ${this._item('DisableAssRendering', 'Disable ASS Styling', 'DisableAssRenderingDescription', 'Force plain text mode.', this._toggle('subtitle-force-text-toggle', PlayerSettings.get('disableAssStyling'), 'disableAssStyling'))}
                 ${this._item('AssRenderer', 'ASS Subtitle Renderer', 'AssRendererDescription', 'Renderer engine.', this._drop('ass-renderer-select', [
                     { value: 'libass-wasm', label: platformInfo.hasWasmSupport ? 'libass-wasm (WebGL/WASM, Recommended)' : 'libass-wasm (WebGL/WASM, Unsupported)' },
@@ -313,6 +314,13 @@ export class SubtitlesTab {
             PlayerSettings.set('preferExternalSubtitles', next);
             preferExternalBtn?.classList.toggle('active', next);
             log.info(`Prefer External Subtitles set to: ${next}`);
+        });
+
+        const preferFullBtn = $('#subtitle-prefer-full-toggle');
+        this._addListener(preferFullBtn, 'click', () => {
+            const next = !PlayerSettings.get('preferFullCaptions');
+            PlayerSettings.set('preferFullCaptions', next);
+            preferFullBtn?.classList.toggle('active', next);
         });
 
         // Force Text Subtitles Toggle

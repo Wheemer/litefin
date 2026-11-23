@@ -236,6 +236,7 @@ const DEFAULTS = {
 
     // Prefer external subtitle tracks over internal ones
     preferExternalSubtitles: false,
+    preferFullCaptions: false,
 
     // Subtitle text size ('small', 'medium', 'large', 'larger', 'extralarge', 'custom')
     subtitleSize: 'medium',

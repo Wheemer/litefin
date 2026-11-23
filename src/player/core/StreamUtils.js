@@ -571,6 +571,19 @@ export function resolveSubtitleStream(mediaSource, options = {}) {
     }
 
     if (subtitleMode === 'Always') {
+        if (PlayerSettings.get('preferFullCaptions') === true) {
+            const fullTracks = subtitleStreams.filter((s) =>
+                !isForcedStream(s) && (prefLang === 'none' || isLanguageMatch(s, prefLang))
+            );
+            if (fullTracks.length > 0) {
+                const external = PlayerSettings.get('preferExternalSubtitles')
+                    ? fullTracks.filter((s) => s.IsExternal)
+                    : [];
+                const candidates = external.length > 0 ? external : fullTracks;
+                return (candidates.find((s) => s.IsDefault) || candidates[0]).Index;
+            }
+        }
+
         let best = undefined;
 
         if (PlayerSettings.get('preferExternalSubtitles')) {

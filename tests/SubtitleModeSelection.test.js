@@ -296,6 +296,33 @@ test('resolveSubtitleStream: Subtitle mode "Always" selects user preferred langu
     assert.equal(result, 3, 'Subtitle mode "Always" should pick track matching preferred language');
 });
 
+test('Prefer Full Captions: only changes automatic Always selection when enabled', () => {
+    const mediaSource = {
+        MediaStreams: [
+            { Type: 'Subtitle', Index: 1, Language: 'eng', IsDefault: true, IsForced: true },
+            { Type: 'Subtitle', Index: 2, Language: 'eng' },
+            { Type: 'Subtitle', Index: 3, Language: 'eng', IsExternal: true, Title: 'English Forced' }
+        ]
+    };
+    const disabled = setup({ subtitleMode: 'Always' });
+    assert.equal(disabled.resolveSubtitleStream(mediaSource), 3);
+    const enabled = setup({ subtitleMode: 'Always', preferFullCaptions: true, preferExternalSubtitles: true });
+    assert.equal(enabled.resolveSubtitleStream(mediaSource), 2);
+    assert.equal(enabled.resolveSubtitleStream(mediaSource, { subtitleMode: 'OnlyForced' }), 3);
+    assert.equal(enabled.resolveSubtitleStream(mediaSource, { subtitleMode: 'None' }), -1);
+});
+
+test('Prefer Full Captions: falls back to the preferred language when no full track matches', () => {
+    const { resolveSubtitleStream } = setup({ subtitleMode: 'Always', preferFullCaptions: true });
+    const mediaSource = {
+        MediaStreams: [
+            { Type: 'Subtitle', Index: 1, Language: 'eng', IsForced: true },
+            { Type: 'Subtitle', Index: 2, Language: 'spa', IsDefault: true }
+        ]
+    };
+    assert.equal(resolveSubtitleStream(mediaSource), 1);
+});
+
 test('resolveSubtitleStream: Subtitle mode "Smart" shows subtitles when audio does not match preferred subtitle language', () => {
     const { resolveSubtitleStream } = setup({
         subtitleMode: 'Smart',

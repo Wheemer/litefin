@@ -1235,6 +1235,8 @@
     "PreferEpisodeImages": "Prefer Episode Images",
     "PreferEpisodeImagesDescription": "Use episode thumbnails instead of series images for Next Up and Continue Watching rows.",
     "PreferExternalSubtitles": "Prefer External Subtitles",
+    "PreferFullCaptions": "Prefer Full Captions",
+    "PreferFullCaptionsDescription": "In Always mode, choose a full track over a forced-only track in the preferred subtitle language. Applies only on this device.",
     "PreferExternalSubtitlesDescription": "When subtitles 'Always' mode is enabled, prefer external subtitle tracks (SRT/VTT) over embedded ones even if the language is undetermined.",
     "Preferred": "Preferred",
     "PreferredSubtitleLanguageDescription": "Default language for subtitles",
