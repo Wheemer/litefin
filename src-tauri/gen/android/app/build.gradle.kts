@@ -26,7 +26,7 @@ android {
     namespace = "org.litefin.app"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "true"
-        applicationId = "org.litefin.app"
+        applicationId = "org.litefin.wheemer"
         minSdk = 24
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

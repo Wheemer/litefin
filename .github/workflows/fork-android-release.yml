@@ -1,0 +1,166 @@
+name: Fork Android release
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the release (off builds and verifies only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-android-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'Wheemer/litefin'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.merge.outputs.tag }}
+      base: ${{ steps.merge.outputs.base }}
+      commit: ${{ steps.merge.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: development
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge the latest stable upstream tag
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api repos/MoazSalem/litefin/releases/latest --jq .tag_name)
+          [[ "$tag" =~ ^v[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}$ ]]
+          if [[ "$EVENT" == schedule && "$tag" == v2.10.0 ]]; then exit 0; fi
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
+          if grep -Fxq "$tag" <<< "$existing"; then exit 0; fi
+          base=$(git rev-parse HEAD)
+          git fetch --no-tags https://github.com/MoazSalem/litefin.git "refs/tags/$tag"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git merge --no-ff -m "Merge upstream release $tag" "$(git rev-parse 'FETCH_HEAD^{commit}')"
+          test "$(jq -r .version package.json)" = "${tag#v}"
+          git branch fork-release-candidate HEAD
+          git bundle create "$RUNNER_TEMP/candidate.bundle" fork-release-candidate
+          {
+            echo "tag=$tag"
+            echo "base=$base"
+            echo "commit=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: steps.merge.outputs.tag != ''
+        with:
+          name: merged-source
+          path: ${{ runner.temp }}/candidate.bundle
+          retention-days: 1
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: merged-source
+          path: ${{ runner.temp }}
+      - name: Check out merged source
+        env:
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: |
+          git clone -b fork-release-candidate "$RUNNER_TEMP/candidate.bundle" .
+          test "$(git rev-parse HEAD)" = "$COMMIT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - name: Install Android SDK and NDK
+        run: |
+          sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;26.3.11579264'
+          echo "NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> "$GITHUB_ENV"
+      - run: npm ci
+      - name: Build only the universal APK
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          npm run package:android-universal
+          mv -- "Litefin-${TAG#v}-Android-universal.apk" unsigned.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-universal
+          path: unsigned.apk
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      BASE: ${{ needs.prepare.outputs.base }}
+      COMMIT: ${{ needs.prepare.outputs.commit }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-universal
+      - uses: actions/download-artifact@v4
+        with:
+          name: merged-source
+          path: ${{ runner.temp }}
+      - name: Verify the candidate APK
+        run: |
+          sdkmanager 'build-tools;36.0.0'
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/aapt" dump badging unsigned.apk > "$RUNNER_TEMP/apk-info"
+          grep -F "package: name='org.litefin.wheemer'" "$RUNNER_TEMP/apk-info" | grep -F "versionName='${TAG#v}'"
+          "$tools/zipalign" -c -P 16 4 unsigned.apk
+          unzip -Z1 unsigned.apk > "$RUNNER_TEMP/entries"
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            grep -Eq "^lib/$abi/[^/]+\.so$" "$RUNNER_TEMP/entries"
+          done
+      - name: Sign the universal APK
+        env:
+          KEYSTORE: ${{ secrets.FORK_ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.FORK_ANDROID_STORE_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE" && test -n "$STORE_PASSWORD"
+          umask 077
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$KEYSTORE" | base64 -d > "$key"
+          tool="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$tool" sign --ks "$key" --ks-key-alias litefin --ks-pass env:STORE_PASSWORD --out Litefin-Android-universal.apk unsigned.apk
+          "$tool" verify --verbose Litefin-Android-universal.apk
+      - name: Push the tested merge and publish the release
+        if: github.event_name == 'schedule' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git clone -b fork-release-candidate "$RUNNER_TEMP/candidate.bundle" "$RUNNER_TEMP/source"
+          git -C "$RUNNER_TEMP/source" merge-base --is-ancestor "$BASE" "$COMMIT"
+          gh auth setup-git
+          remote="https://github.com/$GITHUB_REPOSITORY.git"
+          current=$(git ls-remote "$remote" refs/heads/development | cut -f1)
+          test "$current" = "$BASE"
+          git -C "$RUNNER_TEMP/source" push "$remote" "$COMMIT:refs/heads/development"
+          gh release create "$TAG" Litefin-Android-universal.apk --repo "$GITHUB_REPOSITORY" \
+            --target "$COMMIT" --title "Litefin $TAG (Wheemer Android)" --latest \
+            --notes "Fork build of upstream Litefin $TAG with a single universal Android APK."
