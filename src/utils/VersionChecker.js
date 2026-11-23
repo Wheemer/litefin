@@ -47,7 +47,11 @@ class VersionChecker {
     async checkUpdate(manual = false) {
         try {
             log.info('Checking for updates from GitHub...');
-            const response = await fetch(this.apiEndpoint, {
+            const updater = globalThis.LitefinUpdater;
+            const endpoint = updater
+                ? 'https://api.github.com/repos/Wheemer/litefin/releases/latest'
+                : this.apiEndpoint;
+            const response = await fetch(endpoint, {
                 method: 'GET',
                 headers: {
                     Accept: 'application/vnd.github.v3+json'
@@ -55,6 +59,10 @@ class VersionChecker {
             });
 
             if (!response.ok) {
+                if (updater && response.status === 404) {
+                    if (manual) toast.show('No fork update has been published yet.', 3000);
+                    return;
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
@@ -66,6 +74,18 @@ class VersionChecker {
             log.debug(`Latest remote version: ${latestVersion}, Current local version: ${currentVersion}`);
 
             if (latestVersion && this._isNewer(latestVersion, currentVersion)) {
+                if (updater) {
+                    if (!data.assets?.some(asset => asset.name === 'Litefin-Android-universal.apk')) {
+                        if (manual) toast.show('This release has no universal APK.', 3000);
+                        return;
+                    }
+                    if (manual) {
+                        updater.offerUpdate(latestVersion);
+                        return;
+                    }
+                    toast.show('Litefin update available. Open Settings > About to install.', 5000);
+                    return;
+                }
                 // Show update availability toast
                 const message = (i18n.t('NewVersionMessage') || 'Version {0} is available on GitHub (Current: {1})')
                     .replace('{0}', latestVersion)

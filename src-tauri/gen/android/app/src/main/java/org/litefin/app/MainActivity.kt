@@ -329,6 +329,7 @@ class MainActivity : TauriActivity() {
     // Injects `window.LitefinAndroid` for clean OS exit and device queries.
     // -------------------------------------------------------------------------
     webView.addJavascriptInterface(AndroidBridge(), "LitefinAndroid")
+    webView.addJavascriptInterface(AndroidUpdater(this), "LitefinUpdater")
 
     // -------------------------------------------------------------------------
     // 4. Configure Cookie Jar & Allow Third-Party Cookie Persistence
