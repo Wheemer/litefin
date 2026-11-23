@@ -26,7 +26,7 @@ jobs:
       base: ${{ steps.merge.outputs.base }}
       commit: ${{ steps.merge.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: development
           fetch-depth: 0
@@ -56,7 +56,7 @@ jobs:
             echo "base=$base"
             echo "commit=$(git rev-parse HEAD)"
           } >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         if: steps.merge.outputs.tag != ''
         with:
           name: merged-source
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: merged-source
           path: ${{ runner.temp }}
@@ -79,17 +79,20 @@ jobs:
         run: |
           git clone -b fork-release-candidate "$RUNNER_TEMP/candidate.bundle" .
           test "$(git rev-parse HEAD)" = "$COMMIT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6.3.0
         with:
           distribution: temurin
           java-version: '21'
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: './src-tauri -> target'
       - name: Install Android SDK and NDK
         run: |
           "${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager" \
@@ -103,7 +106,7 @@ jobs:
         run: |
           npm run package:android-universal
           mv -- "Litefin-${TAG#v}-Android-universal.apk" unsigned.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: unsigned-universal
           path: unsigned.apk
@@ -119,10 +122,10 @@ jobs:
       BASE: ${{ needs.prepare.outputs.base }}
       COMMIT: ${{ needs.prepare.outputs.commit }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: unsigned-universal
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: merged-source
           path: ${{ runner.temp }}
