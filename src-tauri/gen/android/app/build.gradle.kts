@@ -29,7 +29,8 @@ android {
         applicationId = "org.litefin.wheemer"
         minSdk = 24
         targetSdk = 37
-        versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
+        versionCode = (System.getenv("LITEFIN_ANDROID_VERSION_CODE")?.takeIf { it.isNotBlank() }
+            ?: tauriProperties.getProperty("tauri.android.versionCode", "1")).toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
     signingConfigs {

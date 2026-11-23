@@ -41,7 +41,8 @@ class VersionChecker {
             if (r > l) return true;
             if (r < l) return false;
         }
-        return false;
+        const isPrerelease = (version) => /^[vV]?\d+\.\d+\.\d+-/.test(version);
+        return isPrerelease(localStr) && !isPrerelease(remoteStr);
     }
 
     async checkUpdate(manual = false) {
